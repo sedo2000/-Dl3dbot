@@ -100,7 +100,7 @@ bot.action('show_leaderboard', (ctx) => {
 // زر الحالة التقنية
 bot.action('show_status', async (ctx) => {
   const ping = Date.now() - ctx.update.callback_query.message.date * 1000; // تقريبي
-  return ctx.replyWithMarkdown(`💻 **الحالة:** متصل\n⚡ **Ping:** ${Math.abs(ping) % 1000}ms\n👑 **المطور:** [Sedo]`);
+  return ctx.replyWithMarkdown(`💻 **الحالة:** متصل\n⚡ **Ping:** ${Math.abs(ping) % 1000}ms\n👑 **المطور:** [@Dl3dbot]`);
 });
 
 module.exports = async (req, res) => {
