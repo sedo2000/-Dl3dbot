@@ -2,14 +2,13 @@ const { Telegraf, Markup } = require('telegraf');
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
-const userSessions = {};
-// مصفوفة لتخزين أسرع النتائج (بشكل مؤقت)
+// إعدادات المطور
+const ADMIN_ID = 8582402572;
 let leaderboard = [];
+const userSessions = {};
 
 bot.start(async (ctx) => {
   const userId = ctx.from.id;
-  const startTime = Date.now(); // تسجيل وقت البداية
-
   const sentMsg = await ctx.replyWithPhoto('https://od.lk/s/M18zMjc4MDA5NzJf/img_1778128950939.png', {
     caption: 'الرجاء حل الاختبار للتأكد من أنك لست حساباً وهمياً:\n\n**كم ناتج 8 + 2؟**'
   });
@@ -17,71 +16,94 @@ bot.start(async (ctx) => {
   userSessions[userId] = {
     captchaMessageId: sentMsg.message_id,
     isVerified: false,
-    startTime: startTime
+    startTime: null // سيتم تعيينه عند فتح التطبيق
   };
 });
 
 bot.on('text', async (ctx) => {
   const userId = ctx.from.id;
-  const firstName = ctx.from.first_name;
   const messageText = ctx.message.text.trim();
   const session = userSessions[userId];
 
+  // أوامر المطور
+  if (userId === ADMIN_ID) {
+    if (messageText === 'تصفير') {
+      leaderboard = [];
+      return ctx.reply('🗑 تم تصفير قائمة المتصدرين بنجاح.');
+    }
+    if (messageText.startsWith('اعلان ')) {
+      const announcement = messageText.replace('اعلان ', '');
+      return ctx.reply(`📢 تم استلام الإعلان:\n\n${announcement}\n\n(ملاحظة: لإرساله للكل يتطلب قاعدة بيانات للمستخدمين، حالياً سيظهر هنا فقط).`);
+    }
+  }
+
+  // منطق التحقق
   if (session && !session.isVerified) {
     if (messageText === '10') {
-      const endTime = Date.now();
-      const timeTaken = ((endTime - session.startTime) / 1000).toFixed(2); // حساب الوقت بالثواني
-
       try {
         await ctx.deleteMessage().catch(() => {});
         await ctx.deleteMessage(session.captchaMessageId).catch(() => {});
-        
         session.isVerified = true;
+        session.startTime = Date.now(); // يبدأ حساب وقت "التواجد" من هنا
 
-        // إضافة المستخدم لقائمة المتصدرين وترتيبها
-        leaderboard.push({ name: firstName, time: parseFloat(timeTaken) });
-        leaderboard.sort((a, b) => a.time - b.time);
-        leaderboard = leaderboard.slice(0, 5); // الاحتفاظ بأفضل 5 فقط
-
-        await ctx.reply(`✅ تم التحقق بنجاح في ${timeTaken} ثانية!`);
-
+        await ctx.reply('✅ تم التحقق بنجاح!');
         return ctx.reply(
-          'مرحبا بك في اختبار التمويل اضغط على الزر في الاسفل لفتح الأختبار',
+          'مرحبا بك في اختبار التمويل.\nاضغط على الزر لفتح الاختبار، وبعد إنهاء دقيقتين من الدراسة اضغط على "تأكيد الإنجاز" لتسجيل اسمك في المتصدرين.',
           Markup.inlineKeyboard([
             [Markup.button.webApp('فتح الأختبار من هنا', 'https://unfortunately-lemon.vercel.app/')],
-            [Markup.button.callback('🏆 قائمة المتصدرين', 'show_leaderboard')]
+            [Markup.button.callback('✅ تأكيد إنهاء الاختبار (2د+)', 'confirm_finish')],
+            [
+              Markup.button.callback('🏆 المتصدرين', 'show_leaderboard'),
+              Markup.button.callback('⚙️ الحالة التقنية', 'show_status')
+            ]
           ])
         );
-      } catch (error) {
-        console.error("Error:", error);
-      }
-    } else {
-      return ctx.reply('❌ إجابة خاطئة، حاول مرة أخرى.');
+      } catch (e) { console.error(e); }
     }
   }
 });
 
-// التعامل مع ضغطة زر قائمة المتصدرين
-bot.action('show_leaderboard', (ctx) => {
-  if (leaderboard.length === 0) {
-    return ctx.answerCbQuery('القائمة فارغة حالياً، كن أول من يتصدر!', { show_alert: true });
+// منطق تأكيد الإنهاء (بعد دقيقتين)
+bot.action('confirm_finish', async (ctx) => {
+  const userId = ctx.from.id;
+  const session = userSessions[userId];
+
+  if (!session || !session.startTime) return ctx.answerCbQuery('يرجى البدء من جديد عبر /start');
+
+  const timeSpentSeconds = (Date.now() - session.startTime) / 1000;
+  const twoMinutes = 120;
+
+  if (timeSpentSeconds >= twoMinutes) {
+    const minutes = Math.floor(timeSpentSeconds / 60);
+    // إضافة للمتصدرين (الأكثر صموداً/دراسة)
+    if (!leaderboard.find(u => u.id === userId)) {
+      leaderboard.push({ id: userId, name: ctx.from.first_name, time: minutes });
+      leaderboard.sort((a, b) => b.time - a.time); // الترتيب من الأكثر وقتاً للأقل
+    }
+    return ctx.reply(`🎉 كفو! لقد استمررت في الدراسة لمدة ${minutes} دقيقة. تم إضافتك للمتصدرين.`);
+  } else {
+    const remaining = Math.ceil(twoMinutes - timeSpentSeconds);
+    return ctx.answerCbQuery(`يجب عليك الاستمرار في الاختبار لمدة ${remaining} ثانية إضافية لتسجيل اسمك!`, { show_alert: true });
   }
+});
 
-  let text = '🏆 أسرع 5 أشخاص حلوا الاختبار اليوم:\n\n';
-  leaderboard.forEach((user, index) => {
-    text += `${index + 1}. ${user.name} - ⏱ ${user.time} ثانية\n`;
+// قائمة المتصدرين (عرض الأسماء والوقت بالدقائق)
+bot.action('show_leaderboard', (ctx) => {
+  if (leaderboard.length === 0) return ctx.answerCbQuery('القائمة فارغة!');
+  let text = '🏆 متصدري الصمود في الاختبار (بالدقائق):\n\n';
+  leaderboard.slice(0, 5).forEach((u, i) => {
+    text += `${i + 1}. ${u.name} - ⏱ ${u.time} دقيقة\n`;
   });
-
   return ctx.reply(text);
 });
 
+// زر الحالة التقنية
+bot.action('show_status', async (ctx) => {
+  const ping = Date.now() - ctx.update.callback_query.message.date * 1000; // تقريبي
+  return ctx.replyWithMarkdown(`💻 **الحالة:** متصل\n⚡ **Ping:** ${Math.abs(ping) % 1000}ms\n👑 **المطور:** [Sedo]`);
+});
+
 module.exports = async (req, res) => {
-  try {
-    if (req.method === 'POST') {
-      await bot.handleUpdate(req.body);
-    }
-    res.status(200).send('OK');
-  } catch (err) {
-    res.status(500).send('Error');
-  }
+  if (req.method === 'POST') await bot.handleUpdate(req.body);
+  res.status(200).send('OK');
 };
