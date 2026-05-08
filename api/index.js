@@ -6,23 +6,10 @@ const bot = new Telegraf(process.env.BOT_TOKEN);
 const ADMIN_ID = 8582402572;
 let leaderboard = [];
 let userSessions = {};
-// مجموعة لتخزين كافة المستخدمين لإرسال الإعلانات (يفضل استخدام قاعدة بيانات مستقبلاً)
 const allUsers = new Set(); 
-
-// مصفوفة قائمة الأوامر (للتسهيل)
-const ADMIN_COMMANDS = `
-👑 **قائمة أوامر المطور:**
----
-• \`احصائيات\` - لمعرفة عدد مستخدمي البوت.
-• \`اعلان [النص]\` - لإرسال رسالة لكل مستخدمين البوت.
-• \`تصفير\` - لمسح قائمة المتصدرين.
-• \`قائمة المستخدمين\` - عرض ايديات المستخدمين.
-`;
 
 bot.start(async (ctx) => {
   const userId = ctx.from.id;
-  
-  // إضافة المستخدم لقائمة الإعلانات
   allUsers.add(userId);
 
   const sentMsg = await ctx.replyWithPhoto('https://od.lk/s/M18zMjc4MDA5NzJf/img_1778128950939.png', {
@@ -37,50 +24,64 @@ bot.start(async (ctx) => {
   };
 });
 
+// --- أمر المطور الجديد /admin ---
+bot.command('admin', async (ctx) => {
+  const userId = ctx.from.id;
+
+  if (userId !== ADMIN_ID) {
+    return ctx.reply('⚠️ عذراً، هذا الأمر مخصص للمطور فقط.');
+  }
+
+  return ctx.reply('🛠 **لوحة تحكم المطور**\n\nإختر أحد الأوامر من الأزرار أدناه:', {
+    parse_mode: 'Markdown',
+    ...Markup.inlineKeyboard([
+      [Markup.button.callback('📊 الإحصائيات', 'admin_stats')],
+      [Markup.button.callback('🗑 تصفير المتصدرين', 'admin_reset')],
+      [Markup.button.callback('📢 إرسال إعلان للكل', 'admin_broadcast')]
+    ])
+  });
+});
+
+// معالجة ضغطات أزرار لوحة التحكم
+bot.action('admin_stats', (ctx) => {
+  if (ctx.from.id !== ADMIN_ID) return ctx.answerCbQuery('غير مسموح');
+  return ctx.reply(`📊 عدد مستخدمي البوت الحاليين: ${allUsers.size}`);
+});
+
+bot.action('admin_reset', (ctx) => {
+  if (ctx.from.id !== ADMIN_ID) return ctx.answerCbQuery('غير مسموح');
+  leaderboard = [];
+  return ctx.reply('🗑 تم تصفير قائمة المتصدرين بنجاح.');
+});
+
+bot.action('admin_broadcast', (ctx) => {
+  if (ctx.from.id !== ADMIN_ID) return ctx.answerCbQuery('غير مسموح');
+  return ctx.reply('📢 لإرسال إعلان، قم بكتابة الأمر بالتنسيق التالي:\n\n`اعلان [النص هنا]`', { parse_mode: 'Markdown' });
+});
+
 bot.on('text', async (ctx) => {
   const userId = ctx.from.id;
   const messageText = ctx.message.text.trim();
   const session = userSessions[userId];
 
-  // --- نظام أوامر المطور ---
-  if (userId === ADMIN_ID) {
-    // 1. أمر عرض الأوامر
-    if (messageText === 'الاوامر' || messageText === 'help') {
-      return ctx.replyWithMarkdown(ADMIN_COMMANDS);
+  // منطق الإعلان (للمطور)
+  if (userId === ADMIN_ID && messageText.startsWith('اعلان ')) {
+    const announcement = messageText.replace('اعلان ', '');
+    const usersArray = Array.from(allUsers);
+    let successCount = 0;
+
+    await ctx.reply(`⏳ جاري الإرسال لـ ${usersArray.length} مستخدم...`);
+
+    for (const id of usersArray) {
+      try {
+        await ctx.telegram.sendMessage(id, `📢 **إعلان من الإدارة:**\n\n${announcement}`, { parse_mode: 'Markdown' });
+        successCount++;
+      } catch (e) {}
     }
-
-    // 2. أمر الإعلان الشامل
-    if (messageText.startsWith('اعلان ')) {
-      const announcement = messageText.replace('اعلان ', '');
-      const usersArray = Array.from(allUsers);
-      let successCount = 0;
-
-      await ctx.reply(`⏳ جاري إرسال الإعلان إلى ${usersArray.length} مستخدم...`);
-
-      for (const id of usersArray) {
-        try {
-          await ctx.telegram.sendMessage(id, `📢 **إعلان من الإدارة:**\n\n${announcement}`, { parse_mode: 'Markdown' });
-          successCount++;
-        } catch (e) {
-          console.error(`فشل الإرسال لـ ${id}`);
-        }
-      }
-      return ctx.reply(`✅ تم إرسال الإعلان بنجاح إلى ${successCount} مستخدم.`);
-    }
-
-    // 3. أمر الإحصائيات
-    if (messageText === 'احصائيات') {
-      return ctx.reply(`📊 عدد مستخدمي البوت الحاليين: ${allUsers.size}`);
-    }
-
-    // 4. أمر التصفير
-    if (messageText === 'تصفير') {
-      leaderboard = [];
-      return ctx.reply('🗑 تم تصفير قائمة المتصدرين بنجاح.');
-    }
+    return ctx.reply(`✅ تم الإرسال بنجاح إلى ${successCount} مستخدم.`);
   }
 
-  // --- منطق التحقق (للمستخدمين العاديين) ---
+  // منطق التحقق (للمستخدمين)
   if (session && !session.isVerified) {
     if (messageText === '10') {
       try {
@@ -88,10 +89,9 @@ bot.on('text', async (ctx) => {
         await ctx.deleteMessage(session.captchaMessageId).catch(() => {});
         session.isVerified = true;
         session.startTime = Date.now();
-
         await ctx.reply('✅ تم التحقق بنجاح!');
         return ctx.reply(
-          'مرحبا بك في اختبار التمويل.\nاضغط على الزر لفتح الاختبار، وبعد إنهاء دقيقتين من الدراسة اضغط على "تأكيد الإنجاز" لتسجيل اسمك في المتصدرين.',
+          'مرحبا بك في اختبار التمويل.',
           Markup.inlineKeyboard([
             [Markup.button.webApp('فتح الأختبار من هنا', 'https://unfortunately-lemon.vercel.app/')],
             [Markup.button.callback('✅ تأكيد إنهاء الاختبار (2د+)', 'confirm_finish')],
@@ -106,40 +106,33 @@ bot.on('text', async (ctx) => {
   }
 });
 
-// منطق تأكيد الإنهاء (لا تغيير هنا)
+// بقية الدوال (confirm_finish, show_leaderboard, show_status) تبقى كما هي في الكود السابق...
 bot.action('confirm_finish', async (ctx) => {
   const userId = ctx.from.id;
   const session = userSessions[userId];
   if (!session || !session.startTime) return ctx.answerCbQuery('يرجى البدء من جديد عبر /start');
-
   const timeSpentSeconds = (Date.now() - session.startTime) / 1000;
-  const twoMinutes = 120;
-
-  if (timeSpentSeconds >= twoMinutes) {
+  if (timeSpentSeconds >= 120) {
     const minutes = Math.floor(timeSpentSeconds / 60);
     if (!leaderboard.find(u => u.id === userId)) {
       leaderboard.push({ id: userId, name: ctx.from.first_name, time: minutes });
       leaderboard.sort((a, b) => b.time - a.time);
     }
-    return ctx.reply(`🎉 كفو! لقد استمررت في الدراسة لمدة ${minutes} دقيقة. تم إضافتك للمتصدرين.`);
+    return ctx.reply(`🎉 كفو! تم إضافتك للمتصدرين بـ ${minutes} دقيقة.`);
   } else {
-    const remaining = Math.ceil(twoMinutes - timeSpentSeconds);
-    return ctx.answerCbQuery(`يجب عليك الاستمرار في الاختبار لمدة ${remaining} ثانية إضافية لتسجيل اسمك!`, { show_alert: true });
+    return ctx.answerCbQuery(`بقي ${Math.ceil(120 - timeSpentSeconds)} ثانية!`, { show_alert: true });
   }
 });
 
 bot.action('show_leaderboard', (ctx) => {
   if (leaderboard.length === 0) return ctx.answerCbQuery('القائمة فارغة!');
-  let text = '🏆 متصدري الصمود في الاختبار (بالدقائق):\n\n';
-  leaderboard.slice(0, 5).forEach((u, i) => {
-    text += `${i + 1}. ${u.name} - ⏱ ${u.time} دقيقة\n`;
-  });
+  let text = '🏆 المتصدرين:\n\n';
+  leaderboard.slice(0, 5).forEach((u, i) => text += `${i + 1}. ${u.name} - ${u.time} د\n`);
   return ctx.reply(text);
 });
 
-bot.action('show_status', async (ctx) => {
-  const ping = Date.now() - ctx.update.callback_query.message.date * 1000;
-  return ctx.replyWithMarkdown(`💻 **الحالة:** متصل\n⚡ **Ping:** ${Math.abs(ping) % 1000}ms\n👑 **المطور:** [@Dl3dbot]`);
+bot.action('show_status', (ctx) => {
+  return ctx.replyWithMarkdown(`💻 **الحالة:** متصل\n👑 **المطور:** [@Dl3dbot]`);
 });
 
 module.exports = async (req, res) => {
