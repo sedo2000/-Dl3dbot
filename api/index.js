@@ -6,12 +6,12 @@ const bot = new Telegraf(process.env.BOT_TOKEN);
 const reactions = [
     '👍', '❤️', '🔥', '🥰', '👏', '😁', '🤔', '🎉', '🤩', '🙏', 
     '👌', '🕊', '🤡', '🥱', '😍', '🐳', '❤️‍🔥', '🌚', '💯', '⚡️', 
-    '🏆', '🍓', '💋', '😴', '😭', '🤓', '👻', '💻', '👀', '🙈', 
+    '🏆', '🍓', '💋', '😴', '😭', '🤓', 'ghost', '💻', '👀', '🙈', 
     '😇', '🤝', '✍️', '🤗', '🫡', '🎅', '🎄', '💅', '🗿', '🆒', 
     '💘', '🙊', '🦄', '😘', '🤫', '😎', '👾'
 ];
 
-// 2. تواريخ امتحانات المرحلة الثالثة (للمراقبة والتذكير)
+// 2. تواريخ امتحانات المرحلة الثالثة
 const examDates = [
     '2026-05-10', '2026-05-12', '2026-05-14', 
     '2026-05-17', '2026-05-19', '2026-05-21'
@@ -33,8 +33,21 @@ const adviceQuotes = [
 // 4. كلمات رصد تضييع الوقت
 const timeWastingKeywords = /لعب|ببجي|لودو|فلم|نمت|ضايج|نطلع|طالع|ملل|مسلسل|تيك توك|نمشي|نتونس/i;
 
+// --- رسالة الترحيب /start ---
+bot.start((ctx) => {
+    // استخدام دالة اسم العضو للترحيب الشخصي
+    const firstName = ctx.from.first_name;
+    const welcomeMsg = `هلا بيك يا ${firstName} في بوت المتابعة الذكي للمرحلة الثالثة\n\nأنا هنا لأراقب تفاعلك وأذكرك بمواعيد امتحاناتك القادمة.`;
+
+    ctx.reply(welcomeMsg, Markup.inlineKeyboard([
+        [Markup.button.callback('📅 جدول الامتحانات', 'view_exams')]
+    ]));
+});
+
 // --- معالجة كافة الرسائل (نص + ميديا) ---
 bot.on(['message', 'photo', 'video', 'document', 'animation'], async (ctx) => {
+    if (!ctx.message) return;
+
     const today = new Date().toISOString().split('T')[0];
     const isExamMonth = today.includes('2026-05');
     const isExamDay = examDates.includes(today);
@@ -46,14 +59,17 @@ bot.on(['message', 'photo', 'video', 'document', 'animation'], async (ctx) => {
             { type: 'emoji', emoji: randomEmoji }
         ]);
     } catch (e) {
-        // يتخطى الخطأ إذا كان البوت ليس مشرفاً أو الميزة غير مدعومة في النوع
+        // يتخطى الخطأ إذا كانت الميزة غير مدعومة
     }
 
     // ب. التدقيق في النصوص (نصائح مابين الامتحانات)
     if (ctx.message.text) {
         const text = ctx.message.text;
 
-        // إذا كنا في شهر الامتحانات وفي يوم "ليس" يوم امتحان
+        // تجاهل الأوامر مثل /start
+        if (text.startsWith('/')) return;
+
+        // نظام النصح في أيام الدراسة
         if (isExamMonth && !isExamDay) {
             if (timeWastingKeywords.test(text)) {
                 const advice = adviceQuotes[Math.floor(Math.random() * adviceQuotes.length)];
@@ -61,20 +77,14 @@ bot.on(['message', 'photo', 'video', 'document', 'animation'], async (ctx) => {
             }
         }
         
-        // ردود تشجيعية عامة عند ذكر الدراسة
+        // ردود تشجيعية عامة
         if (/دراسة|اقرا|قراية|امتحان/i.test(text)) {
             return ctx.reply("عفية بالسبع، هانت ما بقى شي");
         }
     }
 });
 
-// --- أوامر البوت ---
-bot.start((ctx) => {
-    ctx.reply('📚 نظام المتابعة الذكي للمرحلة الثالثة\nجاهز لمراقبة أدائكم وتفاعلكم!', Markup.inlineKeyboard([
-        [Markup.button.callback('📅 جدول الامتحانات', 'view_exams')]
-    ]));
-});
-
+// --- تفاعل زر الجدول ---
 bot.action('view_exams', (ctx) => {
     const schedule = `
 📅 **جدول امتحانات المرحلة الثالثة:**
@@ -90,7 +100,6 @@ bot.action('view_exams', (ctx) => {
     ctx.answerCbQuery();
 });
 
-// تشغيل على Vercel
 module.exports = async (req, res) => {
     if (req.method === 'POST') await bot.handleUpdate(req.body);
     res.status(200).send('OK');
