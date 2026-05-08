@@ -1,101 +1,93 @@
 const { Telegraf, Markup } = require('telegraf');
+const axios = require('axios');
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
+const PEXELS_API_KEY = 'S6FExqGAcxGCBY9dXFBeyiH2NTeh8AJZTWAqa9P0NDYTVhxX5xfK651m';
 
-// 1. قائمة التفاعلات المعتمدة (من الصورة التي أرسلتها)
-const reactions = [
-    '👍', '❤️', '🔥', '🥰', '👏', '😁', '🤔', '🎉', '🤩', '🙏', 
-    '👌', '🕊', '🤡', '🥱', '😍', '🐳', '❤️‍🔥', '🌚', '💯', '⚡️', 
-    '🏆', '🍓', '💋', '😴', '😭', '🤓', 'ghost', '💻', '👀', '🙈', 
-    '😇', '🤝', '✍️', '🤗', '🫡', '🎅', '🎄', '💅', '🗿', '🆒', 
-    '💘', '🙊', '🦄', '😘', '🤫', '😎', '👾'
-];
+// قائمة التفاعلات بالإيموجي
+const reactions = ['👍', '❤️', '🔥', '🥰', '👏', '😁', '🤔', '🎉', '🤩', '🙏', '👌', '💯', '⚡️', '🏆', '🗿', '🆒', '😎'];
 
-// 2. تواريخ امتحانات المرحلة الثالثة
-const examDates = [
-    '2026-05-10', '2026-05-12', '2026-05-14', 
-    '2026-05-17', '2026-05-19', '2026-05-21'
-];
-
-// 3. اقتباسات عراقية جادة للنصح (بدون إيموجيات)
+// تواريخ الامتحانات والاقتباسات (المرحلة الثالثة)
+const examDates = ['2026-05-10', '2026-05-12', '2026-05-14', '2026-05-17', '2026-05-19', '2026-05-21'];
 const adviceQuotes = [
     "عوف اللعب هسة ومستقبلك أهم من كلشي",
     "شد حيلك يا بطل مابقى شي وتفرح بنجاحك",
     "الوقت يركض والندم ميفيد بعدين كوم اقرأ",
     "السبع ميضيع وقته بالسوالف التعبانة بموسم الامتحانات",
     "تعب شهر ولا قهر سنة كاملة شدها للسبع",
-    "أهلكم ينتظرون منكم الفرحة لا تكسرون بخاطرهم بضياع الوقت",
-    "كوم من الموبايل وروح للكتاب محد يفيدك غير شهادتك",
-    "العباقرة يقرون هسة والكسالة يدورون حجج كوم لكتابك",
-    "ماكو شي يجي بالساهل اتعب اليوم ترتاح باجر"
+    "كوم من الموبايل وروح للكتاب محد يفيدك غير شهادتك"
 ];
 
-// 4. كلمات رصد تضييع الوقت
-const timeWastingKeywords = /لعب|ببجي|لودو|فلم|نمت|ضايج|نطلع|طالع|ملل|مسلسل|تيك توك|نمشي|نتونس/i;
+// --- دالة جلب الصور من Pexels ---
+async function getPexelsPhoto(query) {
+    try {
+        const res = await axios.get(`https://api.pexels.com/v1/search?query=${query}&per_page=1`, {
+            headers: { Authorization: PEXELS_API_KEY }
+        });
+        return res.data.photos[0]?.src.large || null;
+    } catch (e) { return null; }
+}
 
-// --- رسالة الترحيب /start ---
+// --- دالة جلب الفيديوهات من Pexels ---
+async function getPexelsVideo(query) {
+    try {
+        const res = await axios.get(`https://api.pexels.com/videos/search?query=${query}&per_page=1`, {
+            headers: { Authorization: PEXELS_API_KEY }
+        });
+        return res.data.videos[0]?.video_files[0]?.link || null;
+    } catch (e) { return null; }
+}
+
+// --- الترحيب ---
 bot.start((ctx) => {
-    // استخدام دالة اسم العضو للترحيب الشخصي
-    const firstName = ctx.from.first_name;
-    const welcomeMsg = `هلا بيك يا ${firstName} في بوت المتابعة الذكي للمرحلة الثالثة\n\nأنا هنا لأراقب تفاعلك وأذكرك بمواعيد امتحاناتك القادمة.`;
-
-    ctx.reply(welcomeMsg, Markup.inlineKeyboard([
-        [Markup.button.callback('📅 جدول الامتحانات', 'view_exams')]
+    const welcome = `هلا بيك يا ${ctx.from.first_name} في بوت المتابعة الذكي 📚\n\nيمكنك طلب صور أو فيديوهات بكتابة:\n(صورة + الشيء) أو (فيديو + الشيء)`;
+    ctx.reply(welcome, Markup.inlineKeyboard([
+        [Markup.button.callback('📅 جدول الامتحانات', 'view_exams')],
+        [Markup.button.webApp('🚀 فتح الاختبار', 'https://unfortunately-lemon.vercel.app/')]
     ]));
 });
 
-// --- معالجة كافة الرسائل (نص + ميديا) ---
-bot.on(['message', 'photo', 'video', 'document', 'animation'], async (ctx) => {
+// --- معالجة الرسائل ---
+bot.on(['message', 'photo', 'video'], async (ctx) => {
     if (!ctx.message) return;
 
-    const today = new Date().toISOString().split('T')[0];
-    const isExamMonth = today.includes('2026-05');
-    const isExamDay = examDates.includes(today);
-
-    // أ. التفاعل التلقائي بالإيموجي على كل شيء
+    // 1. التفاعل التلقائي بالإيموجي
     try {
-        const randomEmoji = reactions[Math.floor(Math.random() * reactions.length)];
-        await ctx.telegram.setMessageReaction(ctx.chat.id, ctx.message.message_id, [
-            { type: 'emoji', emoji: randomEmoji }
-        ]);
-    } catch (e) {
-        // يتخطى الخطأ إذا كانت الميزة غير مدعومة
-    }
+        const emoji = reactions[Math.floor(Math.random() * reactions.length)];
+        await ctx.telegram.setMessageReaction(ctx.chat.id, ctx.message.message_id, [{ type: 'emoji', emoji }]);
+    } catch (e) {}
 
-    // ب. التدقيق في النصوص (نصائح مابين الامتحانات)
+    // 2. معالجة طلبات الصور والفيديو والرقابة
     if (ctx.message.text) {
-        const text = ctx.message.text;
+        const text = ctx.message.text.toLowerCase();
+        const today = new Date().toISOString().split('T')[0];
 
-        // تجاهل الأوامر مثل /start
-        if (text.startsWith('/')) return;
-
-        // نظام النصح في أيام الدراسة
-        if (isExamMonth && !isExamDay) {
-            if (timeWastingKeywords.test(text)) {
-                const advice = adviceQuotes[Math.floor(Math.random() * adviceQuotes.length)];
-                return ctx.reply(advice, { reply_to_message_id: ctx.message.message_id });
-            }
+        // طلب صورة
+        if (text.startsWith('صورة ')) {
+            const query = text.replace('صورة ', '');
+            const img = await getPexelsPhoto(query);
+            return img ? ctx.replyWithPhoto(img, { caption: `📸 نتيجة البحث عن: ${query}` }) : ctx.reply('لم أجد صورة لهذا الطلب.');
         }
-        
-        // ردود تشجيعية عامة
-        if (/دراسة|اقرا|قراية|امتحان/i.test(text)) {
-            return ctx.reply("عفية بالسبع، هانت ما بقى شي");
+
+        // طلب فيديو
+        if (text.startsWith('فيديو ')) {
+            const query = text.replace('فيديو ', '');
+            const vid = await getPexelsVideo(query);
+            return vid ? ctx.replyWithVideo(vid, { caption: `🎥 نتيجة البحث عن: ${query}` }) : ctx.reply('لم أجد فيديو لهذا الطلب.');
+        }
+
+        // نظام الرقابة في أيام الدراسة
+        if (today.includes('2026-05') && !examDates.includes(today)) {
+            if (/لعب|ببجي|نطلع|ضايج|فلم/i.test(text)) {
+                return ctx.reply(adviceQuotes[Math.floor(Math.random() * adviceQuotes.length)]);
+            }
         }
     }
 });
 
-// --- تفاعل زر الجدول ---
+// --- عرض الجدول ---
 bot.action('view_exams', (ctx) => {
-    const schedule = `
-📅 **جدول امتحانات المرحلة الثالثة:**
-
-الأحد 2026-05-10: مادة تمويل دولي.
-الثلاثاء 2026-05-12: مادة محاسبة تكاليف ك2.
-الخميس 2026-05-14: مادة محاسبة مصرفية.
-الأحد 2026-05-17: مادة جدوى مالية.
-الثلاثاء 2026-05-19: مادة أسواق المال.
-الخميس 2026-05-21: مادة بحوث عمليات.
-    `;
+    const schedule = `📅 **جدول المرحلة الثالثة:**\n\nالأحد 05-10: تمويل دولي\nالثلاثاء 05-12: محاسبة تكاليف\nالخميس 05-14: محاسبة مصرفية\nالأحد 05-17: جدوى مالية\nالثلاثاء 05-19: أسواق المال\nالخميس 05-21: بحوث عمليات`;
     ctx.reply(schedule);
     ctx.answerCbQuery();
 });
