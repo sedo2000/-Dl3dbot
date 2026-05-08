@@ -1,98 +1,89 @@
 const { Telegraf, Markup } = require('telegraf');
 const axios = require('axios');
 
+// تأكد أن BOT_TOKEN مضاف في Vercel Settings
 const bot = new Telegraf(process.env.BOT_TOKEN);
-const PEXELS_API_KEY = 'S6FExqGAcxGCBY9dXFBeyiH2NTeh8AJZTWAqa9P0NDYTVhxX5xfK651m';
+const PEXELS_KEY = 'S6FExqGAcxGCBY9dXFBeyiH2NTeh8AJZTWAqa9P0NDYTVhxX5xfK651m';
 
-// قائمة التفاعلات بالإيموجي
-const reactions = ['👍', '❤️', '🔥', '🥰', '👏', '😁', '🤔', '🎉', '🤩', '🙏', '👌', '💯', '⚡️', '🏆', '🗿', '🆒', '😎'];
+// قائمة الإيموجيات المعتمدة
+const reactions = ['👍', '❤️', '🔥', '🥰', '👏', '😁', '🤔', '🎉', '🤩', '🙏', '👌', '💯', '🏆', '🫡', '😎'];
 
-// تواريخ الامتحانات والاقتباسات (المرحلة الثالثة)
+// جدول المرحلة الثالثة
 const examDates = ['2026-05-10', '2026-05-12', '2026-05-14', '2026-05-17', '2026-05-19', '2026-05-21'];
 const adviceQuotes = [
     "عوف اللعب هسة ومستقبلك أهم من كلشي",
     "شد حيلك يا بطل مابقى شي وتفرح بنجاحك",
     "الوقت يركض والندم ميفيد بعدين كوم اقرأ",
-    "السبع ميضيع وقته بالسوالف التعبانة بموسم الامتحانات",
-    "تعب شهر ولا قهر سنة كاملة شدها للسبع",
-    "كوم من الموبايل وروح للكتاب محد يفيدك غير شهادتك"
+    "تعب شهر ولا قهر سنة كاملة شدها للسبع"
 ];
 
-// --- دالة جلب الصور من Pexels ---
-async function getPexelsPhoto(query) {
+// --- دوال جلب الميديا ---
+const getPhoto = async (q) => {
     try {
-        const res = await axios.get(`https://api.pexels.com/v1/search?query=${query}&per_page=1`, {
-            headers: { Authorization: PEXELS_API_KEY }
-        });
-        return res.data.photos[0]?.src.large || null;
+        const r = await axios.get(`https://api.pexels.com/v1/search?query=${encodeURIComponent(q)}&per_page=1`, { headers: { Authorization: PEXELS_KEY } });
+        return r.data.photos[0]?.src.large || null;
     } catch (e) { return null; }
-}
+};
 
-// --- دالة جلب الفيديوهات من Pexels ---
-async function getPexelsVideo(query) {
+const getVideo = async (q) => {
     try {
-        const res = await axios.get(`https://api.pexels.com/videos/search?query=${query}&per_page=1`, {
-            headers: { Authorization: PEXELS_API_KEY }
-        });
-        return res.data.videos[0]?.video_files[0]?.link || null;
+        const r = await axios.get(`https://api.pexels.com/videos/search?query=${encodeURIComponent(q)}&per_page=1`, { headers: { Authorization: PEXELS_KEY } });
+        return r.data.videos[0]?.video_files[0]?.link || null;
     } catch (e) { return null; }
-}
+};
 
-// --- الترحيب ---
+// --- الأوامر والرسائل ---
 bot.start((ctx) => {
-    const welcome = `هلا بيك يا ${ctx.from.first_name} في بوت المتابعة الذكي 📚\n\nيمكنك طلب صور أو فيديوهات بكتابة:\n(صورة + الشيء) أو (فيديو + الشيء)`;
-    ctx.reply(welcome, Markup.inlineKeyboard([
+    ctx.reply(`هلا بيك يا ${ctx.from.first_name} في بوت المتابعة 📚`, Markup.inlineKeyboard([
         [Markup.button.callback('📅 جدول الامتحانات', 'view_exams')],
         [Markup.button.webApp('🚀 فتح الاختبار', 'https://unfortunately-lemon.vercel.app/')]
     ]));
 });
 
-// --- معالجة الرسائل ---
 bot.on(['message', 'photo', 'video'], async (ctx) => {
     if (!ctx.message) return;
 
-    // 1. التفاعل التلقائي بالإيموجي
+    // التفاعل التلقائي
     try {
         const emoji = reactions[Math.floor(Math.random() * reactions.length)];
         await ctx.telegram.setMessageReaction(ctx.chat.id, ctx.message.message_id, [{ type: 'emoji', emoji }]);
     } catch (e) {}
 
-    // 2. معالجة طلبات الصور والفيديو والرقابة
     if (ctx.message.text) {
-        const text = ctx.message.text.toLowerCase();
+        const text = ctx.message.text;
         const today = new Date().toISOString().split('T')[0];
 
-        // طلب صورة
+        // طلب الميديا من Pexels
         if (text.startsWith('صورة ')) {
-            const query = text.replace('صورة ', '');
-            const img = await getPexelsPhoto(query);
-            return img ? ctx.replyWithPhoto(img, { caption: `📸 نتيجة البحث عن: ${query}` }) : ctx.reply('لم أجد صورة لهذا الطلب.');
+            const img = await getPhoto(text.replace('صورة ', ''));
+            return img ? ctx.replyWithPhoto(img) : ctx.reply('ما لكيت صورة.');
         }
-
-        // طلب فيديو
         if (text.startsWith('فيديو ')) {
-            const query = text.replace('فيديو ', '');
-            const vid = await getPexelsVideo(query);
-            return vid ? ctx.replyWithVideo(vid, { caption: `🎥 نتيجة البحث عن: ${query}` }) : ctx.reply('لم أجد فيديو لهذا الطلب.');
+            const vid = await getVideo(text.replace('فيديو ', ''));
+            return vid ? ctx.replyWithVideo(vid) : ctx.reply('ما لكيت فيديو.');
         }
 
-        // نظام الرقابة في أيام الدراسة
+        // الرقابة (أيام الدراسة)
         if (today.includes('2026-05') && !examDates.includes(today)) {
-            if (/لعب|ببجي|نطلع|ضايج|فلم/i.test(text)) {
+            if (/لعب|ببجي|نطلع|ضايج|فلم|ملل/i.test(text)) {
                 return ctx.reply(adviceQuotes[Math.floor(Math.random() * adviceQuotes.length)]);
             }
         }
     }
 });
 
-// --- عرض الجدول ---
 bot.action('view_exams', (ctx) => {
-    const schedule = `📅 **جدول المرحلة الثالثة:**\n\nالأحد 05-10: تمويل دولي\nالثلاثاء 05-12: محاسبة تكاليف\nالخميس 05-14: محاسبة مصرفية\nالأحد 05-17: جدوى مالية\nالثلاثاء 05-19: أسواق المال\nالخميس 05-21: بحوث عمليات`;
-    ctx.reply(schedule);
+    ctx.reply(`📅 جدول المرحلة الثالثة:\n\n10-05: تمويل دولي\n12-05: محاسبة تكاليف\n14-05: محاسبة مصرفية\n17-05: جدوى مالية\n19-05: أسواق المال\n21-05: بحوث عمليات`);
     ctx.answerCbQuery();
 });
 
+// التصدير لـ Vercel
 module.exports = async (req, res) => {
-    if (req.method === 'POST') await bot.handleUpdate(req.body);
-    res.status(200).send('OK');
+    try {
+        if (req.method === 'POST') await bot.handleUpdate(req.body);
+        res.status(200).send('OK');
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Internal Server Error');
+    }
 };
