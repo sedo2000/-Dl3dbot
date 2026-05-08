@@ -19,8 +19,8 @@ bot.start(async (ctx) => {
   userSessions[userId] = {
     isVerified: false,
     isWaitingForSupport: false,
-    isWaitingForAdminReply: false, // حالة للمطور عند الرد
-    replyToUserId: null // لحفظ ايدي المستخدم الذي يرد عليه المطور
+    isWaitingForAdminReply: false,
+    replyToUserId: null 
   };
 });
 
@@ -33,69 +33,86 @@ bot.command('admin', (ctx) => {
   ]));
 });
 
-// --- منطق الدعم الفني للمستخدم ---
+// --- مركز الدعم الفني (الردود التلقائية + المراسلة) ---
 bot.action('contact_support', (ctx) => {
-  const userId = ctx.from.id;
-  if (!userSessions[userId]) return;
-  userSessions[userId].isWaitingForSupport = true;
-  return ctx.reply('💬 من فضلك أرسل رسالتك الآن، وسيقوم المطور بالرد عليك.');
+  return ctx.editMessageText('👨‍💻 **مركز الدعم الفني**\n\nمن فضلك اختر نوع الاستفسار للحصول على إجابة فورية، أو اختر مراسلة الإدارة:', 
+    Markup.inlineKeyboard([
+      [Markup.button.callback('❓ مشكلة في فتح الرابط', 'support_link_issue')],
+      [Markup.button.callback('📜 تعليمات الاختبار', 'support_rules')],
+      [Markup.button.callback('💬 مراسلة الإدارة مباشرة', 'contact_admin_direct')],
+      [Markup.button.callback('⬅️ رجوع للقائمة', 'back_to_main')]
+    ])
+  );
 });
 
-// --- منطق ضغط المطور على زر "الرد على الرسالة" ---
+bot.action('support_link_issue', (ctx) => {
+  return ctx.editMessageText('💡 **حل مشكلة الرابط:**\n\n1. تأكد من تحديث تطبيق التليجرام لآخر إصدار.\n2. جرب فتح الرابط من متصفح خارجي (مثل Chrome).\n3. إذا كنت تستخدم VPN، حاول إيقافه.', 
+    Markup.inlineKeyboard([[Markup.button.callback('⬅️ رجوع', 'contact_support')]])
+  );
+});
+
+bot.action('support_rules', (ctx) => {
+  return ctx.editMessageText('📜 **تعليمات الاختبار:**\n\n- يجب الإجابة على جميع الأسئلة بدقة.\n- لا يسمح باستخدام وسائل مساعدة خارجية.\n- في حال واجهت خطأ تقني، التقط صورة للشاشة وأرسلها للدعم.', 
+    Markup.inlineKeyboard([[Markup.button.callback('⬅️ رجوع', 'contact_support')]])
+  );
+});
+
+bot.action('contact_admin_direct', (ctx) => {
+  const userId = ctx.from.id;
+  if (!userSessions[userId]) userSessions[userId] = {};
+  userSessions[userId].isWaitingForSupport = true;
+  return ctx.reply('💬 حسناً، أرسل رسالتك الآن (نص فقط)، وسيقوم المطور بالرد عليك في أقرب وقت.');
+});
+
+// --- العودة للقائمة الرئيسية بعد التحقق ---
+bot.action('back_to_main', (ctx) => {
+  return ctx.editMessageText('✅ القائمة الرئيسية:', Markup.inlineKeyboard([
+    [Markup.button.webApp('🚀 فتح الأختبار الآن', 'https://unfortunately-lemon.vercel.app/')],
+    [Markup.button.callback('👨‍💻 الدعم الفني', 'contact_support')],
+    [Markup.button.callback('⚙️ الحالة التقنية', 'show_status')]
+  ]));
+});
+
+// --- منطق رد المطور السريع عبر الزر ---
 bot.action(/^reply_to_(.+)$/, (ctx) => {
   if (ctx.from.id !== ADMIN_ID) return ctx.answerCbQuery('غير مسموح');
-  
-  const targetUserId = ctx.match[1]; // استخراج ايدي المستخدم من بيانات الزر
-  
-  // تهيئة جلسة المطور للرد
+  const targetUserId = ctx.match[1];
   if (!userSessions[ADMIN_ID]) userSessions[ADMIN_ID] = {};
   userSessions[ADMIN_ID].isWaitingForAdminReply = true;
   userSessions[ADMIN_ID].replyToUserId = targetUserId;
-
-  return ctx.reply(`✍️ حسناً، أرسل الآن رسالة الرد التي تريد إرسالها للمستخدم (ID: ${targetUserId}):`);
+  return ctx.reply(`✍️ أرسل الآن ردك للمستخدم (ID: ${targetUserId}):`);
 });
 
 // --- معالجة الرسائل النصية ---
 bot.on('text', async (ctx) => {
   const userId = ctx.from.id;
   const messageText = ctx.message.text.trim();
-  
-  // تأكد من وجود جلسة
   if (!userSessions[userId]) userSessions[userId] = {};
   const session = userSessions[userId];
 
-  // 1. المطور يقوم بالرد على رسالة دعم (باستخدام الزر)
+  // 1. المطور يرد على مستخدم
   if (userId === ADMIN_ID && session.isWaitingForAdminReply) {
     const targetId = session.replyToUserId;
     try {
       await bot.telegram.sendMessage(targetId, `📩 **رد من الإدارة:**\n\n${messageText}`);
       session.isWaitingForAdminReply = false;
-      session.replyToUserId = null;
-      return ctx.reply('✅ تم إرسال ردك للمستخدم بنجاح.');
+      return ctx.reply('✅ تم إرسال الرد بنجاح.');
     } catch (e) {
-      session.isWaitingForAdminReply = false;
-      return ctx.reply('❌ فشل الإرسال، قد يكون المستخدم حظر البوت.');
+      return ctx.reply('❌ فشل الإرسال.');
     }
   }
 
-  // 2. المستخدم يراسل الدعم الفني
+  // 2. المستخدم يراسل الدعم
   if (session.isWaitingForSupport) {
     session.isWaitingForSupport = false;
-    
-    // إرسال الرسالة للمطور مع زر "الرد"
     await bot.telegram.sendMessage(ADMIN_ID, 
       `📩 **رسالة دعم جديدة:**\n\n👤 الاسم: ${ctx.from.first_name}\n🆔 الايدي: \`${userId}\`\n💬 الرسالة: ${messageText}`, 
-      {
-        parse_mode: 'Markdown',
-        ...Markup.inlineKeyboard([
-          [Markup.button.callback('↩️ الرد على الرسالة', `reply_to_${userId}`)]
-        ])
-      }
+      Markup.inlineKeyboard([[Markup.button.callback('↩️ الرد على الرسالة', `reply_to_${userId}`)]])
     );
     return ctx.reply('✅ تم إرسال رسالتك للمطور.');
   }
 
-  // 3. منطق الإعلان للمطور
+  // 3. الإعلان
   if (userId === ADMIN_ID && messageText.startsWith('اعلان ')) {
     const announcement = messageText.replace('اعلان ', '');
     for (const id of allUsers) {
@@ -104,7 +121,7 @@ bot.on('text', async (ctx) => {
     return ctx.reply('✅ تم النشر.');
   }
 
-  // 4. منطق التحقق (Captcha)
+  // 4. التحقق
   if (!session.isVerified && messageText === '10') {
     session.isVerified = true;
     return ctx.reply('✅ تم التحقق بنجاح!', Markup.inlineKeyboard([
@@ -115,7 +132,7 @@ bot.on('text', async (ctx) => {
   }
 });
 
-// --- الأزرار المساعدة ---
+// --- وظائف إضافية ---
 bot.action('admin_stats', (ctx) => ctx.reply(`📊 عدد المستخدمين: ${allUsers.size}`));
 bot.action('show_status', (ctx) => ctx.replyWithMarkdown(`💻 **الحالة:** متصل\n👑 **المطور:** [@Dl3dbot]`));
 
