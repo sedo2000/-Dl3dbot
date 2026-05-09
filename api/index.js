@@ -2,24 +2,26 @@ const { Telegraf, Markup } = require('telegraf');
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
-// أمر البدء /start مع إضافة اسم العضو والزر الشفاف
+// رابط البوت الخاص بك للمشاركة
+const BOT_LINK = 'https://t.me/Dl3dbot'; 
+const SHARE_TEXT = encodeURIComponent('شوف بودكاست "على الورق"، محتوى رهيب ويفيدك! 🎙️✨');
+
 bot.start((ctx) => {
-  const firstName = ctx.from.first_name; // دالة جلب اسم العضو
+  const firstName = ctx.from.first_name;
   const welcomeMessage = `أهلاً بك يا ${firstName} في بودكاست على الورق 🎙️\n\nاضغط على الزر الشفاف بالأسفل لعرض البودكاست.`;
 
   ctx.reply(welcomeMessage, Markup.inlineKeyboard([
-    [Markup.button.webApp('📺 عرض البودكاست', 'https://podcast-ivory-five.vercel.app/')]
+    [Markup.button.webApp('📺 عرض البودكاست', 'https://podcast-ivory-five.vercel.app/')],
+    [Markup.button.url('🔗 شارك مع صديق', `https://t.me/share/url?url=${BOT_LINK}&text=${SHARE_TEXT}`)]
   ]));
 });
 
-// تصدير البوت للعمل على Vercel
 module.exports = async (req, res) => {
   if (req.method === 'POST') {
     try {
       await bot.handleUpdate(req.body);
       res.status(200).send('OK');
     } catch (err) {
-      console.error(err);
       res.status(500).send('Error');
     }
   } else {
